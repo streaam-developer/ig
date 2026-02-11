@@ -276,7 +276,7 @@ class InstagramBot {
 
     try {
       // Try to restore session
-      const sessionFile = path.join(config.session.sessionPath, `${config.credentials.username}.json`);
+      const sessionFile = path.join(config.session.sessionPath, `${this.username}.json`);
       
       if (await fs.pathExists(sessionFile)) {
         spinner.text = 'Restoring session...';
@@ -298,58 +298,151 @@ class InstagramBot {
 
       // Perform normal login
       await this.ig.simulate.preLoginFlow();
-      const loginResult = await this.ig.account.login(
-        config.credentials.username,
-        config.credentials.password
-      );
+      
+      try {
+        const loginResult = await this.ig.account.login(
+          this.username,
+          this.password
+        );
 
-      // Handle two-factor authentication
-      if (loginResult.two_factor_required) {
-        spinner.stop();
-        console.log(chalk.yellow('\n⚠️  Two-factor authentication required!'));
-        
-        const twoFactorMethod = loginResult.two_factor_info.two_factor_identifier
-          ? 'SMS'
-          : 'Authenticator';
+        // Handle two-factor authentication
+        if (loginResult.two_factor_required) {
+          spinner.stop();
+          console.log(chalk.yellow('\n⚠️  Two-factor authentication required!'));
+          
+          const twoFactorMethod = loginResult.two_factor_info.two_factor_identifier
+            ? 'SMS'
+            : 'Authenticator';
 
-        const code = await this.promptCode(twoFactorMethod);
+          const code = await this.promptCode(twoFactorMethod);
+          
+          spinner.start('Verifying 2FA code...');
+          try {
+            const verified = await this.ig.account.twoFactorLogin({
+              twoFactorIdentifier: loginResult.two_factor_info.two_factor_identifier,
+              verificationCode: code,
+              trustDevice: true,
+            });
+            spinner.succeed('2FA verification successful!');
+            this.sessionData = verified.logged_in_user;
+          } catch (error) {
+            spinner.fail('2FA verification failed!');
+            throw error;
+          }
+        } else {
+          this.sessionData = loginResult;
+          spinner.succeed(`Logged in as ${loginResult.username}!`);
+        }
+
+        this.loggedIn = true;
+        this.startTime = new Date();
+
+        // Save session
+        if (config.session.saveSession) {
+          await this.saveSession();
+        }
+
+        // Post-login actions
+        await this.ig.simulate.postLoginFlow();
         
-        spinner.start('Verifying 2FA code...');
-        try {
-          const verified = await this.ig.account.twoFactorLogin({
-            twoFactorIdentifier: loginResult.two_factor_info.two_factor_identifier,
-            verificationCode: code,
-            trustDevice: true,
-          });
-          spinner.succeed('2FA verification successful!');
-          this.sessionData = verified.logged_in_user;
-        } catch (error) {
-          spinner.fail('2FA verification failed!');
+        this.log('success', `Successfully logged in as ${this.sessionData.username}`);
+        return true;
+      } catch (error) {
+        // Check for checkpoint_required (email/SMS verification)
+        if (error.message && error.message.includes('checkpoint_required')) {
+          spinner.stop();
+          console.log(chalk.yellow('\n⚠️  Instagram Security Checkpoint Detected!'));
+          console.log(chalk.white('━'.repeat(40)));
+          console.log(chalk.white('Instagram is asking you to verify your identity.'));
+          console.log(chalk.white('This usually requires email or SMS verification.'));
+          console.log(chalk.white('━'.repeat(40)));
+          
+          const choice = await this.promptCheckpoint();
+          
+          if (choice === '1') {
+            // Request email verification
+            await this.handleCheckpoint('email');
+          } else if (choice === '2') {
+            // Request SMS verification
+            await this.handleCheckpoint('sms');
+          } else {
+            throw new Error('Checkpoint verification cancelled by user');
+          }
+        } else {
           throw error;
         }
-      } else {
-        this.sessionData = loginResult;
-        spinner.succeed(`Logged in as ${loginResult.username}!`);
       }
-
-      this.loggedIn = true;
-      this.startTime = new Date();
-
-      // Save session
-      if (config.session.saveSession) {
-        await this.saveSession();
-      }
-
-      // Post-login actions
-      await this.ig.simulate.postLoginFlow();
-      
-      this.log('success', `Successfully logged in as ${this.sessionData.username}`);
-      return true;
     } catch (error) {
       spinner.fail('Login failed!');
       this.log('error', `Login failed: ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * Handle checkpoint (email/SMS verification)
+   */
+  async handleCheckpoint(method) {
+    const spinner = ora(`Requesting ${method} verification...`).start();
+    
+    try {
+      // Get checkpoint data
+      const checkpoint = await this.ig.checkpoint.getCheckpointsData();
+      
+      // Request verification code
+      if (method === 'email') {
+        await this.ig.checkpoint.sendEmailVerification();
+      } else {
+        await this.ig.checkpoint.sendSMSVerification();
+      }
+      
+      spinner.succeed(`Code sent via ${method}!`);
+      
+      // Prompt for code
+      const code = await this.promptCode(method.toUpperCase());
+      
+      spinner.start('Verifying code...');
+      
+      // Verify the code
+      const verified = await this.ig.checkpoint.sendVerificationCode(code);
+      
+      if (verified) {
+        spinner.succeed('Verification successful!');
+        this.log('success', `${method.toUpperCase()} verification completed`);
+        
+        // Retry login after verification
+        return await this.login();
+      } else {
+        spinner.fail('Verification failed!');
+        throw new Error('Invalid verification code');
+      }
+    } catch (error) {
+      spinner.fail('Checkpoint verification failed!');
+      this.log('error', `Checkpoint error: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Prompt for checkpoint choice
+   */
+  async promptCheckpoint() {
+    const readline = require('readline').createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    return new Promise((resolve) => {
+      console.log(chalk.cyan('\nChoose verification method:'));
+      console.log(chalk.white('[1] Send code to email'));
+      console.log(chalk.white('[2] Send code to SMS'));
+      console.log(chalk.white('[3] Cancel'));
+      
+      readline.question(chalk.cyan('\nEnter your choice (1-3): '), (choice) => {
+        readline.close();
+        resolve(choice);
+      });
+    });
   }
 
   /**
