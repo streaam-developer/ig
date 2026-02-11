@@ -1,0 +1,9 @@
+{
+  "username": "your_instagram_username",
+  "password": "your_instagram_password",
+  "video_path": "/path/to/your/reel/video.mp4",
+  "caption": "Your reel caption here! #reels #instagram",
+  "hashtags": ["#reels", "#instagram", "#viral"],
+  "headless": false,
+  "max_wait_time": 30
+}
