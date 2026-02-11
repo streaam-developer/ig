@@ -315,7 +315,7 @@ class InstagramBot {
             const twoFactorMethod = twoFactorInfo?.totp_two_factor_on ? 'Authenticator' : 'SMS';
 
             console.log(chalk.yellow('\nTwo-factor authentication required!'));
-            const code = await this.promptCode(twoFactorMethod);
+            const code = await this.promptCode(twoFactorMethod, '2FA');
 
             spinner.start('Verifying 2FA code...');
             try {
@@ -356,7 +356,7 @@ class InstagramBot {
             ? 'SMS'
             : 'Authenticator';
 
-          const code = await this.promptCode(twoFactorMethod);
+          const code = await this.promptCode(twoFactorMethod, '2FA');
           
           spinner.start('Verifying 2FA code...');
           try {
@@ -405,10 +405,10 @@ class InstagramBot {
           
           if (choice === '1') {
             // Request email verification
-            await this.handleCheckpoint('email');
+            return await this.handleCheckpoint('email');
           } else if (choice === '2') {
             // Request SMS verification
-            await this.handleCheckpoint('sms');
+            return await this.handleCheckpoint('sms');
           } else {
             throw new Error('Checkpoint verification cancelled by user');
           }
@@ -430,36 +430,42 @@ class InstagramBot {
     const spinner = ora(`Requesting ${method} verification...`).start();
     
     try {
-      // Get checkpoint data
-      const checkpoint = await this.ig.checkpoint.getCheckpointsData();
-      
-      // Request verification code
-      if (method === 'email') {
-        await this.ig.checkpoint.sendEmailVerification();
-      } else {
-        await this.ig.checkpoint.sendSMSVerification();
+      const challenge = this.ig.challenge;
+      if (!challenge) {
+        throw new Error('Checkpoint flow is not available for this client');
       }
+
+      let state = null;
+      try {
+        state = await challenge.state();
+      } catch (stateError) {
+        state = null;
+      }
+
+      if (state && state.step_name === 'delta_login_review') {
+        await challenge.deltaLoginReview('1');
+        spinner.succeed('Login review confirmed!');
+        return await this.login();
+      }
+
+      const choice = method === 'email' ? '1' : '0';
+      await challenge.selectVerifyMethod(choice);
       
       spinner.succeed(`Code sent via ${method}!`);
       
       // Prompt for code
-      const code = await this.promptCode(method.toUpperCase());
+      const code = await this.promptCode(method.toUpperCase(), 'verification');
       
       spinner.start('Verifying code...');
       
       // Verify the code
-      const verified = await this.ig.checkpoint.sendVerificationCode(code);
-      
-      if (verified) {
-        spinner.succeed('Verification successful!');
-        this.log('success', `${method.toUpperCase()} verification completed`);
-        
-        // Retry login after verification
-        return await this.login();
-      } else {
-        spinner.fail('Verification failed!');
-        throw new Error('Invalid verification code');
-      }
+      await challenge.sendSecurityCode(code);
+
+      spinner.succeed('Verification successful!');
+      this.log('success', `${method.toUpperCase()} verification completed`);
+
+      // Retry login after verification
+      return await this.login();
     } catch (error) {
       spinner.fail('Checkpoint verification failed!');
       this.log('error', `Checkpoint error: ${error.message}`);
@@ -492,7 +498,7 @@ class InstagramBot {
   /**
    * Prompt for 2FA code
    */
-  async promptCode(method) {
+  async promptCode(method, purpose = 'verification') {
     const readline = require('readline').createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -500,7 +506,7 @@ class InstagramBot {
 
     return new Promise((resolve) => {
       readline.question(
-        chalk.cyan(`\nEnter the 2FA code sent via ${method}: `),
+        chalk.cyan(`\nEnter the ${purpose} code sent via ${method}: `),
         (code) => {
           readline.close();
           resolve(code);
