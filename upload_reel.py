@@ -26,47 +26,127 @@ def setup_driver(config):
 
 def login_instagram(driver, username, password):
     driver.get('https://www.instagram.com/')
-    time.sleep(5)
+    time.sleep(8)  # Increased wait time
+
+    # Handle cookies popup
     try:
-        # Accept cookies if prompted
-        accept_button = WebDriverWait(driver, 10).until(
+        accept_button = WebDriverWait(driver, 15).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Accept') or contains(text(),'Allow') or contains(text(),'Accept All')]"))
         )
         accept_button.click()
-        time.sleep(2)
-    except:
-        pass
+        time.sleep(3)
+    except Exception as e:
+        print(f"No cookie popup or error: {e}")
 
-    # Enter username
-    username_field = WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='username']"))
-    )
+    # Try multiple selectors for username field
+    username_field = None
+    selectors = [
+        "input[name='username']",
+        "input[aria-label*='Phone number']",
+        "input[aria-label*='Username']",
+        "input[placeholder*='Phone number']",
+        "input[placeholder*='Username']",
+        "//input[@name='username']",
+        "//input[contains(@aria-label,'Phone') or contains(@aria-label,'Username')]"
+    ]
+
+    for selector in selectors:
+        try:
+            if selector.startswith("//"):
+                username_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, selector))
+                )
+            else:
+                username_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+            print(f"Found username field with selector: {selector}")
+            break
+        except:
+            continue
+
+    if not username_field:
+        raise Exception("Could not find username field")
+
     username_field.clear()
     username_field.send_keys(username)
-    time.sleep(1)
+    print(f"Entered username: {username}")
+    time.sleep(2)
 
-    # Enter password
-    password_field = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='password']"))
-    )
+    # Try multiple selectors for password field
+    password_field = None
+    pass_selectors = [
+        "input[name='password']",
+        "input[type='password']",
+        "input[aria-label*='Password']",
+        "input[placeholder*='Password']",
+        "//input[@name='password']",
+        "//input[@type='password']"
+    ]
+
+    for selector in pass_selectors:
+        try:
+            if selector.startswith("//"):
+                password_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, selector))
+                )
+            else:
+                password_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+            print(f"Found password field with selector: {selector}")
+            break
+        except:
+            continue
+
+    if not password_field:
+        raise Exception("Could not find password field")
+
     password_field.clear()
     password_field.send_keys(password)
-    time.sleep(1)
+    print(f"Entered password: {'*' * len(password)}")
+    time.sleep(2)
 
-    # Click login
-    login_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
-    )
+    # Click login button
+    login_button = None
+    login_selectors = [
+        "button[type='submit']",
+        "//button[@type='submit']",
+        "//button[contains(text(),'Log in')]",
+        "button[data-testid*='login']",
+        "//div[text()='Log in']/parent::button"
+    ]
+
+    for selector in login_selectors:
+        try:
+            if selector.startswith("//"):
+                login_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+            else:
+                login_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                )
+            print(f"Found login button with selector: {selector}")
+            break
+        except:
+            continue
+
+    if not login_button:
+        raise Exception("Could not find login button")
+
     login_button.click()
+    print("Clicked login button")
 
-    # Wait for login to complete - check for home page or profile
-    time.sleep(10)
+    # Wait for login to complete
+    time.sleep(15)
     try:
-        WebDriverWait(driver, 30).until(
+        WebDriverWait(driver, 45).until(
             lambda d: 'instagram.com' in d.current_url and ('/' in d.current_url or '/accounts/' not in d.current_url)
         )
-    except:
-        print("Login may have failed or taken longer. Proceeding...")
+        print("Login successful!")
+    except Exception as e:
+        print(f"Login may have failed or taken longer: {e}. Current URL: {driver.current_url}")
     time.sleep(5)
 
 def upload_reel(driver, config):
