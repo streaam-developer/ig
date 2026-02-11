@@ -2,6 +2,7 @@
  * Advanced Instagram Private API Automation Script
  * 
  * Features:
+ * - Multi-account support
  * - Authentication with session management
  * - Post creation (photos, albums, stories, reels)
  * - Direct messaging
@@ -23,9 +24,141 @@ const ora = require('ora');
 const config = require('./config/config');
 const Utils = require('./utils/logger');
 
-class InstagramBot {
+/**
+ * Multi-Account Manager for handling multiple Instagram accounts
+ */
+class MultiAccountManager {
   constructor() {
+    this.accounts = new Map();
+    this.currentAccount = null;
+  }
+
+  /**
+   * Add an account to the manager
+   */
+  addAccount(username, password) {
+    const bot = new InstagramBot(username, password);
+    this.accounts.set(username, bot);
+    return bot;
+  }
+
+  /**
+   * Get account by username
+   */
+  getAccount(username) {
+    return this.accounts.get(username);
+  }
+
+  /**
+   * Switch to a different account
+   */
+  async switchAccount(username) {
+    const bot = this.accounts.get(username);
+    if (!bot) {
+      throw new Error(`Account ${username} not found`);
+    }
+    this.currentAccount = bot;
+    return bot;
+  }
+
+  /**
+   * Login to all accounts
+   */
+  async loginAll() {
+    const results = {};
+    for (const [username, bot] of this.accounts) {
+      try {
+        await bot.init();
+        await bot.login();
+        results[username] = { success: true };
+        console.log(chalk.green(`✓ Logged in as @${username}`));
+      } catch (error) {
+        results[username] = { success: false, error: error.message };
+        console.log(chalk.red(`✗ Failed to login @${username}: ${error.message}`));
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Logout from all accounts
+   */
+  async logoutAll() {
+    const results = {};
+    for (const [username, bot] of this.accounts) {
+      try {
+        await bot.logout();
+        results[username] = true;
+      } catch (error) {
+        results[username] = false;
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Get statistics for all accounts
+   */
+  async getAllStats() {
+    const results = {};
+    for (const [username, bot] of this.accounts) {
+      if (bot.loggedIn) {
+        results[username] = await bot.getStats();
+      }
+    }
+    return results;
+  }
+
+  /**
+   * List all accounts
+   */
+  listAccounts() {
+    return Array.from(this.accounts.keys());
+  }
+
+  /**
+   * Get total stats across all accounts
+   */
+  getTotalStats() {
+    let total = {
+      likes: 0,
+      follows: 0,
+      unfollows: 0,
+      comments: 0,
+      posts: 0,
+      stories: 0,
+      messages: 0,
+      errors: 0,
+      accounts: this.accounts.size,
+      loggedIn: 0,
+    };
+
+    for (const [, bot] of this.accounts) {
+      if (bot.loggedIn) {
+        total.loggedIn++;
+        for (const key of Object.keys(total).filter(k => k !== 'accounts' && k !== 'loggedIn')) {
+          total[key] += bot.stats[key];
+        }
+      }
+    }
+
+    return total;
+  }
+}
+
+/**
+ * Main Instagram Bot Class
+ */
+class InstagramBot {
+  /**
+   * Constructor
+   * @param {string} username - Instagram username
+   * @param {string} password - Instagram password
+   */
+  constructor(username = null, password = null) {
     this.ig = new IgApiClient();
+    this.username = username || config.credentials.username;
+    this.password = password || config.credentials.password;
     this.loggedIn = false;
     this.sessionData = null;
     this.stats = {
@@ -1027,4 +1160,7 @@ class InstagramBot {
   }
 }
 
-module.exports = InstagramBot;
+module.exports = {
+  InstagramBot,
+  MultiAccountManager,
+};

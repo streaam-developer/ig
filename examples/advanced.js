@@ -5,7 +5,7 @@
  * Run with: node examples/advanced.js
  */
 
-const InstagramBot = require('../src/instagram');
+const { InstagramBot, MultiAccountManager } = require('../src/instagram');
 const chalk = require('chalk');
 
 class BotExamples {
@@ -235,10 +235,74 @@ class BotExamples {
   }
 
   /**
-   * Example 8: Complete Automation Workflow
+   * Example 8: Multi-Account Management
+   */
+  async exampleMultiAccount() {
+    console.log(chalk.cyan('\n📌 Example 8: Multi-Account Management\n'));
+
+    try {
+      // Create multi-account manager
+      const manager = new MultiAccountManager();
+
+      // Add accounts
+      console.log(chalk.yellow('→ Adding accounts...'));
+      manager.addAccount('account1', 'password1');
+      manager.addAccount('account2', 'password2');
+      manager.addAccount('account3', 'password3');
+      console.log(chalk.green(`✓ Added ${manager.listAccounts().length} accounts`));
+
+      // Login to all accounts
+      console.log(chalk.yellow('→ Logging in to all accounts...'));
+      const loginResults = await manager.loginAll();
+
+      // Show login results
+      console.log(chalk.white('\n📊 Login Results:'));
+      console.log(chalk.white('━'.repeat(30)));
+      for (const [username, result] of Object.entries(loginResults)) {
+        const status = result.success ? chalk.green('✓') : chalk.red('✗');
+        console.log(chalk.white(`  ${status} @${username}`));
+      }
+
+      // Switch between accounts
+      console.log(chalk.white('\n🔄 Switching between accounts...'));
+      await manager.switchAccount('account2');
+      console.log(chalk.green(`✓ Switched to @account2`));
+
+      const bot = manager.getAccount('account2');
+      const user = await bot.getCurrentUser();
+      console.log(chalk.white(`  Current user: @${user.username}`));
+
+      // Get all stats
+      console.log(chalk.white('\n📊 Combined Statistics:'));
+      const totalStats = manager.getTotalStats();
+      console.log(chalk.white('━'.repeat(30)));
+      console.log(chalk.white(`  Accounts: ${totalStats.accounts}`));
+      console.log(chalk.white(`  Logged In: ${totalStats.loggedIn}`));
+      console.log(chalk.white(`  Total Likes: ${totalStats.likes}`));
+      console.log(chalk.white(`  Total Follows: ${totalStats.follows}`));
+      console.log(chalk.white(`  Total Comments: ${totalStats.comments}`));
+
+      // Get individual stats
+      console.log(chalk.white('\n📊 Individual Account Stats:'));
+      const allStats = await manager.getAllStats();
+      for (const [username, stats] of Object.entries(allStats)) {
+        console.log(chalk.white(`  @${username}: ${stats.followers} followers, ${stats.posts} posts`));
+      }
+
+      // Logout from all
+      console.log(chalk.yellow('\n→ Logging out from all accounts...'));
+      await manager.logoutAll();
+      console.log(chalk.green('✓ All accounts logged out'));
+    } catch (error) {
+      console.log(chalk.red(`Error: ${error.message}`));
+    }
+  }
+
+  /**
+   * Example 9: Complete Automation Workflow
    */
   async exampleCompleteWorkflow() {
-    console.log(chalk.cyan('\n📌 Example 8: Complete Automation Workflow\n'));
+    console.log(chalk.cyan('\n📌 Example 9: Complete Automation Workflow\n'));
 
     try {
       await this.bot.init();
@@ -306,6 +370,7 @@ class BotExamples {
       { name: 'User Analysis', method: 'exampleUserAnalysis' },
       { name: 'Auto-Engagement Campaign', method: 'exampleAutoEngagement' },
       { name: 'Account Management', method: 'exampleAccountManagement' },
+      { name: 'Multi-Account Management', method: 'exampleMultiAccount' },
       { name: 'Complete Workflow', method: 'exampleCompleteWorkflow' },
     ];
 
@@ -347,6 +412,8 @@ const exampleNumber = process.argv[2];
     } else if (exampleNumber === '7') {
       await examples.exampleAccountManagement();
     } else if (exampleNumber === '8') {
+      await examples.exampleMultiAccount();
+    } else if (exampleNumber === '9') {
       await examples.exampleCompleteWorkflow();
     } else {
       // Default: show menu
