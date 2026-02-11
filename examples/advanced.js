@@ -7,6 +7,7 @@
 
 const { InstagramBot, MultiAccountManager } = require('../src/instagram');
 const chalk = require('chalk');
+const config = require('../src/config/config');
 
 class BotExamples {
   constructor() {
@@ -244,15 +245,32 @@ class BotExamples {
       // Create multi-account manager
       const manager = new MultiAccountManager();
 
-      // Add accounts
-      console.log(chalk.yellow('→ Adding accounts...'));
-      manager.addAccount('account1', 'password1');
-      manager.addAccount('account2', 'password2');
-      manager.addAccount('account3', 'password3');
-      console.log(chalk.green(`✓ Added ${manager.listAccounts().length} accounts`));
+      // Load accounts from environment variables
+      console.log(chalk.yellow('→ Loading accounts from .env...\n'));
+      
+      // Primary account (IG_USERNAME, IG_PASSWORD)
+      if (config.credentials.username && config.credentials.password) {
+        manager.addAccount(config.credentials.username, config.credentials.password);
+        console.log(chalk.white(`  ✓ Primary: @${config.credentials.username}`));
+      }
+
+      // Additional accounts (IG_USERNAME_2, IG_PASSWORD_2, etc.)
+      for (const account of config.accounts) {
+        if (account.index > 1) {
+          manager.addAccount(account.username, account.password);
+          console.log(chalk.white(`  ✓ Account ${account.index}: @${account.username}`));
+        }
+      }
+
+      if (manager.listAccounts().length === 0) {
+        console.log(chalk.red('⚠️  No accounts configured! Please set IG_USERNAME and IG_PASSWORD in .env'));
+        return;
+      }
+
+      console.log(chalk.white(`\n📊 Total accounts: ${manager.listAccounts().length}`));
 
       // Login to all accounts
-      console.log(chalk.yellow('→ Logging in to all accounts...'));
+      console.log(chalk.yellow('\n→ Logging in to all accounts...'));
       const loginResults = await manager.loginAll();
 
       // Show login results
@@ -265,10 +283,13 @@ class BotExamples {
 
       // Switch between accounts
       console.log(chalk.white('\n🔄 Switching between accounts...'));
-      await manager.switchAccount('account2');
-      console.log(chalk.green(`✓ Switched to @account2`));
+      const accounts = manager.listAccounts();
+      if (accounts.length > 1) {
+        await manager.switchAccount(accounts[1]);
+        console.log(chalk.green(`✓ Switched to @${accounts[1]}`));
+      }
 
-      const bot = manager.getAccount('account2');
+      const bot = manager.getAccount(accounts[0]);
       const user = await bot.getCurrentUser();
       console.log(chalk.white(`  Current user: @${user.username}`));
 
@@ -341,7 +362,6 @@ class BotExamples {
       await this.bot.massUnfollowNonFollowers(5);
 
       console.log(chalk.white('━'.repeat(40)));
-      console.log(chalk.white('Step 4: Final statistics'));
       console.log(chalk.white('━'.repeat(40)));
 
       await this.bot.printStats();

@@ -5,12 +5,47 @@
 
 require('dotenv').config();
 
+/**
+ * Load multiple accounts from environment variables
+ */
+function loadAccounts() {
+  const accounts = [];
+  
+  // Primary account
+  if (process.env.IG_USERNAME && process.env.IG_PASSWORD) {
+    accounts.push({
+      index: 1,
+      username: process.env.IG_USERNAME,
+      password: process.env.IG_PASSWORD,
+    });
+  }
+  
+  // Additional accounts (IG_USERNAME_2, IG_PASSWORD_2, etc.)
+  for (let i = 2; i <= 10; i++) {
+    const userKey = `IG_USERNAME_${i}`;
+    const passKey = `IG_PASSWORD_${i}`;
+    
+    if (process.env[userKey] && process.env[passKey]) {
+      accounts.push({
+        index: i,
+        username: process.env[userKey],
+        password: process.env[passKey],
+      });
+    }
+  }
+  
+  return accounts;
+}
+
 module.exports = {
-  // Instagram Credentials
+  // Primary account credentials
   credentials: {
     username: process.env.IG_USERNAME || '',
     password: process.env.IG_PASSWORD || '',
   },
+
+  // Multi-account support
+  accounts: loadAccounts(),
 
   // Session Configuration
   session: {
