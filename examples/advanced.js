@@ -284,14 +284,29 @@ class BotExamples {
       // Switch between accounts
       console.log(chalk.white('\n🔄 Switching between accounts...'));
       const accounts = manager.listAccounts();
-      if (accounts.length > 1) {
-        await manager.switchAccount(accounts[1]);
-        console.log(chalk.green(`✓ Switched to @${accounts[1]}`));
+      
+      // Find first successfully logged in account
+      let loggedInAccount = null;
+      for (const username of accounts) {
+        const bot = manager.getAccount(username);
+        if (bot && bot.loggedIn) {
+          loggedInAccount = username;
+          break;
+        }
       }
 
-      const bot = manager.getAccount(accounts[0]);
-      const user = await bot.getCurrentUser();
-      console.log(chalk.white(`  Current user: @${user.username}`));
+      if (loggedInAccount) {
+        console.log(chalk.green(`✓ Switched to @${loggedInAccount}`));
+        const bot = manager.getAccount(loggedInAccount);
+        try {
+          const user = await bot.getCurrentUser();
+          console.log(chalk.white(`  Current user: @${user.username}`));
+        } catch (e) {
+          console.log(chalk.yellow('  Could not get user info'));
+        }
+      } else {
+        console.log(chalk.yellow('⚠️  No accounts are logged in'));
+      }
 
       // Get all stats
       console.log(chalk.white('\n📊 Combined Statistics:'));
