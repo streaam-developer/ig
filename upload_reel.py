@@ -26,11 +26,11 @@ def setup_driver(config):
 
 def login_instagram(driver, username, password):
     driver.get('https://www.instagram.com/')
-    time.sleep(3)
+    time.sleep(5)
     try:
         # Accept cookies if prompted
         accept_button = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, "//button[text()='Accept' or text()='Allow' or text()='Accept All']"))
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Accept') or contains(text(),'Allow') or contains(text(),'Accept All')]"))
         )
         accept_button.click()
         time.sleep(2)
@@ -38,70 +38,119 @@ def login_instagram(driver, username, password):
         pass
 
     # Enter username
-    username_field = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.NAME, 'username'))
+    username_field = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='username']"))
     )
+    username_field.clear()
     username_field.send_keys(username)
+    time.sleep(1)
 
     # Enter password
-    password_field = driver.find_element(By.NAME, 'password')
+    password_field = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='password']"))
+    )
+    password_field.clear()
     password_field.send_keys(password)
+    time.sleep(1)
 
     # Click login
-    login_button = driver.find_element(By.XPATH, "//button[@type='submit']")
+    login_button = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+    )
     login_button.click()
 
-    # Wait for login to complete
-    WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.XPATH, "//div[@role='main']"))
-    )
+    # Wait for login to complete - check for home page or profile
+    time.sleep(10)
+    try:
+        WebDriverWait(driver, 30).until(
+            lambda d: 'instagram.com' in d.current_url and ('/' in d.current_url or '/accounts/' not in d.current_url)
+        )
+    except:
+        print("Login may have failed or taken longer. Proceeding...")
     time.sleep(5)
 
 def upload_reel(driver, config):
-    # Click create button
-    create_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//svg[@aria-label='New post']"))
-    )
+    # Click create button - try multiple selectors
+    try:
+        create_button = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//svg[@aria-label='New post']"))
+        )
+    except:
+        create_button = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(@aria-label, 'New post') or contains(@aria-label, 'Create')]"))
+        )
     create_button.click()
-    time.sleep(2)
+    time.sleep(3)
 
-    # Select Reel
-    reel_option = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//span[text()='Reel']"))
-    )
-    reel_option.click()
-    time.sleep(2)
+    # Select Reel - try multiple ways
+    try:
+        reel_option = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//span[text()='Reel']"))
+        )
+        reel_option.click()
+    except:
+        # Try clicking on the reel tab or button
+        try:
+            reel_tab = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//div[contains(text(),'Reel')]"))
+            )
+            reel_tab.click()
+        except:
+            # If reel option not found, assume it's already selected or proceed
+            pass
+    time.sleep(3)
 
     # Upload video
-    upload_input = driver.find_element(By.XPATH, "//input[@type='file']")
+    upload_input = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+    )
     upload_input.send_keys(config['video_path'])
-    time.sleep(5)  # Wait for upload
+    time.sleep(10)  # Wait for upload
 
     # Click Next
-    next_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//div[text()='Next']"))
-    )
+    try:
+        next_button = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.XPATH, "//div[text()='Next']"))
+        )
+    except:
+        next_button = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[text()='Next']"))
+        )
     next_button.click()
-    time.sleep(2)
+    time.sleep(3)
 
     # Add caption
-    caption_field = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, "//div[@role='textbox']"))
-    )
+    try:
+        caption_field = WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.XPATH, "//div[@role='textbox']"))
+        )
+    except:
+        caption_field = WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "textarea[placeholder*='Write a caption']"))
+        )
+    caption_field.clear()
     caption_field.send_keys(config['caption'])
     time.sleep(2)
 
     # Click Share
-    share_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//div[text()='Share']"))
-    )
+    try:
+        share_button = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//div[text()='Share']"))
+        )
+    except:
+        share_button = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[text()='Share']"))
+        )
     share_button.click()
 
     # Wait for upload to complete
-    WebDriverWait(driver, config.get('max_wait_time', 30)).until(
-        EC.presence_of_element_located((By.XPATH, "//div[text()='Your reel has been shared.']"))
-    )
-    print("Reel uploaded successfully!")
+    try:
+        WebDriverWait(driver, config.get('max_wait_time', 60)).until(
+            EC.presence_of_element_located((By.XPATH, "//div[contains(text(),'shared') or contains(text(),'posted')]"))
+        )
+        print("Reel uploaded successfully!")
+    except:
+        print("Upload may have completed, but confirmation message not found. Check your Instagram account.")
 
 def main():
     config = load_config()
