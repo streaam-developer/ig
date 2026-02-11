@@ -243,16 +243,19 @@ class InstagramBot {
    * Save session
    */
   async saveSession() {
-    const sessionFile = path.join(config.session.sessionPath, `${config.credentials.username}.json`);
+    const sessionFile = path.join(
+      config.session.sessionPath, 
+      `${config.credentials.username}.json`
+    );
     await fs.writeJson(sessionFile, {
       username: config.credentials.username,
-      password: config.credentials.password,
+      passwordHash: Buffer.from(config.credentials.password).toString('base64').slice(0, 10) + '...', // Don't store full password
       sessionId: this.ig.state.sessionId,
       csrfToken: this.ig.state.csrfToken,
       deviceString: this.ig.state.deviceString,
       savedAt: new Date().toISOString(),
     });
-    this.log('info', 'Session saved');
+    this.log('info', `Session saved: ${sessionFile}`);
   }
 
   /**
@@ -962,9 +965,13 @@ class InstagramBot {
       this.loggedIn = false;
       
       // Clear session file
-      const sessionFile = path.join(config.session.sessionPath, `${config.credentials.username}.json`);
+      const sessionFile = path.join(
+        config.session.sessionPath, 
+        `${config.credentials.username}.json`
+      );
       if (await fs.pathExists(sessionFile)) {
         await fs.remove(sessionFile);
+        this.log('info', 'Session file deleted');
       }
 
       this.log('success', 'Logged out successfully');
