@@ -13,7 +13,9 @@
 
 const {
   IgApiClient,
+  IgCheckpointError,
   IgLoginTwoFactorRequiredError,
+  IgNoCheckpointError,
   RelationshipAction,
   Period,
 } = require('instagram-private-api');
@@ -393,7 +395,13 @@ class InstagramBot {
       } catch (error) {
         // Check for checkpoint_required (email/SMS verification)
         const errorMessage = (error && error.message ? error.message : '').toLowerCase();
-        if (errorMessage.includes('checkpoint_required') || errorMessage.includes('help you get back into your account') || errorMessage.includes('we can send you an email')) {
+        const isCheckpointError =
+          error instanceof IgCheckpointError ||
+          errorMessage.includes('checkpoint_required') ||
+          errorMessage.includes('challenge_required') ||
+          errorMessage.includes('help you get back into your account') ||
+          errorMessage.includes('we can send you an email');
+        if (isCheckpointError) {
           spinner.stop();
           console.log(chalk.yellow('\n⚠️  Instagram Security Checkpoint Detected!'));
           console.log(chalk.white('━'.repeat(40)));
@@ -401,6 +409,10 @@ class InstagramBot {
           console.log(chalk.white('This usually requires email or SMS verification.'));
           console.log(chalk.white('━'.repeat(40)));
           
+          this.setCheckpointFromError(error);
+          if (!this.ig?.state?.checkpoint) {
+            throw new Error('No checkpoint data available. Complete verification in the Instagram app/website, then retry.');
+          }
           const choice = await this.promptCheckpoint();
           
           if (choice === '1') {
@@ -439,7 +451,10 @@ class InstagramBot {
       try {
         state = await challenge.state();
       } catch (stateError) {
-        state = null;
+        if (stateError instanceof IgNoCheckpointError) {
+          throw new Error('No checkpoint data available. Complete verification in the Instagram app/website, then retry.');
+        }
+        throw stateError;
       }
 
       if (state && state.step_name === 'delta_login_review') {
@@ -448,8 +463,16 @@ class InstagramBot {
         return await this.login();
       }
 
-      const choice = method === 'email' ? '1' : '0';
-      await challenge.selectVerifyMethod(choice);
+      const primaryChoice = method === 'email' ? '1' : '0';
+      try {
+        await challenge.selectVerifyMethod(primaryChoice, false);
+      } catch (selectError) {
+        if (selectError instanceof IgNoCheckpointError) {
+          throw new Error('No checkpoint data available. Complete verification in the Instagram app/website, then retry.');
+        }
+        const fallbackChoice = primaryChoice === '1' ? '0' : '1';
+        await challenge.selectVerifyMethod(fallbackChoice, false);
+      }
       
       spinner.succeed(`Code sent via ${method}!`);
       
@@ -538,6 +561,22 @@ class InstagramBot {
 
     await fs.writeJson(sessionFile, sessionPayload);
     this.log('info', `Session saved: ${sessionFile}`);
+  }
+
+  /**
+   * Capture checkpoint data from a login error, if present
+   */
+  setCheckpointFromError(error) {
+    const challengeData =
+      error?.response?.body?.challenge ||
+      error?.response?.body?.checkpoint ||
+      error?.checkpoint;
+
+    if (challengeData && this.ig?.state) {
+      this.ig.state.checkpoint = challengeData;
+    }
+
+    return challengeData || null;
   }
 
   /**
