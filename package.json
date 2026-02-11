@@ -1,0 +1,38 @@
+{
+  "name": "instagram-automation",
+  "version": "1.0.0",
+  "description": "Advanced Instagram Private API automation script",
+  "main": "src/instagram.js",
+  "scripts": {
+    "start": "node src/instagram.js",
+    "example": "node examples/advanced.js",
+    "test": "node tests/test.js"
+  },
+  "keywords": [
+    "instagram",
+    "automation",
+    "private-api",
+    "bot",
+    "social-media"
+  ],
+  "author": "Instagram Bot",
+  "license": "MIT",
+  "dependencies": {
+    "instagram-private-api": "^1.45.3",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2",
+    "inquirer": "^9.2.12",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "fs-extra": "^11.2.0",
+    "moment": "^2.29.4",
+    "uuid": "^9.0.1",
+    "sleep-promise": "^9.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
