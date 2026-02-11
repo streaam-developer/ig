@@ -187,7 +187,7 @@ class InstagramBot {
     this.setupLogging();
 
     // Initialize Instagram client
-    this.ig.state.generateDevice(config.credentials.username);
+    this.ig.state.generateDevice(this.username);
     
     // Handle proxy if enabled
     if (config.proxy.enabled) {
@@ -281,16 +281,18 @@ class InstagramBot {
       if (await fs.pathExists(sessionFile)) {
         spinner.text = 'Restoring session...';
         this.sessionData = await fs.readJson(sessionFile);
-        await this.ig.simulate.preLoginFlow();
-        
+
         try {
-          await this.ig.account.login(
-            this.sessionData.username,
-            this.sessionData.password
-          );
-          this.loggedIn = true;
-          spinner.succeed('Session restored successfully!');
-          return true;
+          if (this.sessionData.state && typeof this.ig.state.deserialize === 'function') {
+            await this.ig.state.deserialize(this.sessionData.state);
+            const currentUser = await this.ig.account.currentUser();
+            this.sessionData = currentUser;
+            this.loggedIn = true;
+            this.startTime = new Date();
+            spinner.succeed('Session restored successfully!');
+            await this.ig.simulate.postLoginFlow();
+            return true;
+          }
         } catch (error) {
           this.log('warning', 'Session restore failed, logging in normally...');
         }
@@ -300,15 +302,55 @@ class InstagramBot {
       await this.ig.simulate.preLoginFlow();
       
       try {
-        const loginResult = await this.ig.account.login(
-          this.username,
-          this.password
-        );
+        let loginResult;
+        try {
+          loginResult = await this.ig.account.login(
+            this.username,
+            this.password
+          );
+        } catch (error) {
+          if (error instanceof IgLoginTwoFactorRequiredError) {
+            spinner.stop();
+            const twoFactorInfo = error.response?.body?.two_factor_info;
+            const twoFactorMethod = twoFactorInfo?.totp_two_factor_on ? 'Authenticator' : 'SMS';
+
+            console.log(chalk.yellow('\nTwo-factor authentication required!'));
+            const code = await this.promptCode(twoFactorMethod);
+
+            spinner.start('Verifying 2FA code...');
+            try {
+              const verified = await this.ig.account.twoFactorLogin({
+                username: this.username,
+                twoFactorIdentifier: twoFactorInfo?.two_factor_identifier,
+                verificationCode: code,
+                trustDevice: true,
+              });
+              spinner.succeed('2FA verification successful!');
+              this.sessionData = verified.logged_in_user || verified;
+            } catch (twoFactorError) {
+              spinner.fail('2FA verification failed!');
+              throw twoFactorError;
+            }
+
+            this.loggedIn = true;
+            this.startTime = new Date();
+
+            if (config.session.saveSession) {
+              await this.saveSession();
+            }
+
+            await this.ig.simulate.postLoginFlow();
+            this.log('success', `Successfully logged in as ${this.sessionData.username}`);
+            return true;
+          }
+
+          throw error;
+        }
 
         // Handle two-factor authentication
         if (loginResult.two_factor_required) {
           spinner.stop();
-          console.log(chalk.yellow('\n⚠️  Two-factor authentication required!'));
+          console.log(chalk.yellow('\nTwo-factor authentication required!'));
           
           const twoFactorMethod = loginResult.two_factor_info.two_factor_identifier
             ? 'SMS'
@@ -319,12 +361,13 @@ class InstagramBot {
           spinner.start('Verifying 2FA code...');
           try {
             const verified = await this.ig.account.twoFactorLogin({
+              username: this.username,
               twoFactorIdentifier: loginResult.two_factor_info.two_factor_identifier,
               verificationCode: code,
               trustDevice: true,
             });
             spinner.succeed('2FA verification successful!');
-            this.sessionData = verified.logged_in_user;
+            this.sessionData = verified.logged_in_user || verified;
           } catch (error) {
             spinner.fail('2FA verification failed!');
             throw error;
@@ -349,7 +392,8 @@ class InstagramBot {
         return true;
       } catch (error) {
         // Check for checkpoint_required (email/SMS verification)
-        if (error.message && error.message.includes('checkpoint_required')) {
+        const errorMessage = (error && error.message ? error.message : '').toLowerCase();
+        if (errorMessage.includes('checkpoint_required') || errorMessage.includes('help you get back into your account') || errorMessage.includes('we can send you an email')) {
           spinner.stop();
           console.log(chalk.yellow('\n⚠️  Instagram Security Checkpoint Detected!'));
           console.log(chalk.white('━'.repeat(40)));
@@ -471,16 +515,22 @@ class InstagramBot {
   async saveSession() {
     const sessionFile = path.join(
       config.session.sessionPath, 
-      `${config.credentials.username}.json`
+      `${this.username}.json`
     );
-    await fs.writeJson(sessionFile, {
-      username: config.credentials.username,
-      passwordHash: Buffer.from(config.credentials.password).toString('base64').slice(0, 10) + '...', // Don't store full password
-      sessionId: this.ig.state.sessionId,
-      csrfToken: this.ig.state.csrfToken,
-      deviceString: this.ig.state.deviceString,
+    const sessionPayload = {
+      username: this.username,
       savedAt: new Date().toISOString(),
-    });
+    };
+
+    if (typeof this.ig.state.serialize === 'function') {
+      sessionPayload.state = await this.ig.state.serialize();
+    } else {
+      sessionPayload.sessionId = this.ig.state.sessionId;
+      sessionPayload.csrfToken = this.ig.state.csrfToken;
+      sessionPayload.deviceString = this.ig.state.deviceString;
+    }
+
+    await fs.writeJson(sessionFile, sessionPayload);
     this.log('info', `Session saved: ${sessionFile}`);
   }
 
@@ -1063,7 +1113,7 @@ class InstagramBot {
    * Non-followers strategy - find users who don't follow back
    */
   async findNonFollowers(username = null) {
-    const target = username || config.credentials.username;
+    const target = username || this.username;
     console.log(chalk.cyan(`\n🔍 Finding non-followers for @${target}...\n`));
 
     const [followers, following] = await Promise.all([
@@ -1193,7 +1243,7 @@ class InstagramBot {
       // Clear session file
       const sessionFile = path.join(
         config.session.sessionPath, 
-        `${config.credentials.username}.json`
+        `${this.username}.json`
       );
       if (await fs.pathExists(sessionFile)) {
         await fs.remove(sessionFile);
